@@ -1,5 +1,6 @@
 import time
 import wiringpi
+import sys
 
 def blink(_pin):
     wiringpi.digitalWrite(_pin, 1)  # Write HIGH to pin
