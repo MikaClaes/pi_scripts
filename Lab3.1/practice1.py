@@ -17,6 +17,3 @@ wiringpi.pinMode(pin, 1)  # Set pin as OUTPUT
 # MAIN
 while True:
     blink(pin)
-
-# CLEANUP
-print("Done")
