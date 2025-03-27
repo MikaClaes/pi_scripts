@@ -37,7 +37,7 @@ bmp280 = BMP280(i2c_addr=bmp280_address, i2c_dev=bus)
 bus.write_byte(bh1750_address, 0x10)  # 1lx resolution 120ms
 
 # Sample interval
-interval = 3  # Sample period in seconds
+interval = 15  # Sample period in seconds
 
 # MQTT settings
 MQTT_HOST = "mqtt3.thingspeak.com"
@@ -86,7 +86,7 @@ while True:
     except OSError as e:
         print(f"Error: {e}")
         client.reconnect()
-        time.sleep(3)  # Wait a bit before trying again
+        time.sleep(5)  # Wait a bit before trying again
     except Exception as e:
         print(f"Unexpected error: {e}")
-        time.sleep(3)  # Wait a bit before trying again
+        time.sleep(5)  # Wait a bit before trying again
