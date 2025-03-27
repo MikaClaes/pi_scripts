@@ -1,5 +1,7 @@
 #Imports
+import wiringpi
 import time
+import threading
 from bmp280 import BMP280
 from smbus2 import SMBus, i2c_msg
 import paho.mqtt.client as mqtt
@@ -24,6 +26,65 @@ def on_disconnect(client, userdata, flags, rc=0):
 def on_message(client, userdata, msg):
     print("Received a message on topic: " + msg.topic + "; message: " + msg.payload)
 
+#Sensor function
+def sensor_thread():
+    while True:
+        try:
+            # Measure BMP280 data
+            bmp280_temperature = bmp280.get_temperature()
+        
+            # Measure BH1750 data
+            lux = get_lux_value(bus, bh1750_address)
+        
+            # Print measurements
+            print("Light: %4.1f lux, Temperature: %4.1f°C," % 
+            (lux, bmp280_temperature))
+        
+            # Create the JSON data structure with three fields
+            MQTT_DATA = "field1=" + str(lux) + "&field2=" + str(bmp280_temperature) + "&status=MQTTPUBLISH"
+            print(MQTT_DATA)
+        
+            # Publish data to ThingSpeak
+            client.publish(topic=MQTT_TOPIC, payload=MQTT_DATA, qos=0, retain=False, properties=None)
+        
+            # Wait for the next sample interval
+            time.sleep(interval)
+        
+        except OSError as e:
+            print(f"Error: {e}")
+            client.reconnect()
+            time.sleep(5)  # Wait a bit before trying again
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            time.sleep(5)  # Wait a bit before trying again
+
+def button_thread():
+    while True:
+        if(wiringpi.digitalRead(LIGHT_LESS_PIN) == 1):
+            print("Less Light")
+        if(wiringpi.digitalRead(LIGHT_MORE_PIN) == 1):
+            print("More Light")
+        if(wiringpi.digitalRead(TEMP_LESS_PIN) == 1):
+            print("Less Temp")
+        if(wiringpi.digitalRead(TEMP_MORE_PIN) == 1):
+            print("More Temp")
+        
+
+
+#Variables
+LIGHT_LESS_PIN = 7
+LIGHT_MORE_PIN = 8
+TEMP_LESS_PIN = 11
+TEMP_MORE_PIN = 12
+exit_event = threading.Event()
+n = 0
+
+#PIN setup
+wiringpi.wiringPiSetup()
+wiringpi.pinMode(LIGHT_LESS_PIN, 0)
+wiringpi.pinMode(LIGHT_MORE_PIN, 0)
+wiringpi.pinMode(TEMP_LESS_PIN, 0)
+wiringpi.pinMode(TEMP_MORE_PIN, 0)
 
 # Create an I2C bus object
 bus = SMBus(0)
@@ -61,32 +122,23 @@ print("Attempting to connect to %s" % MQTT_HOST)
 client.connect(MQTT_HOST, MQTT_PORT)
 client.loop_start()  # start the loop
 
-while True:
-    try:
-        # Measure BMP280 data
-        bmp280_temperature = bmp280.get_temperature()
-        
-        # Measure BH1750 data
-        lux = get_lux_value(bus, bh1750_address)
-        
-        # Print measurements
-        print("Light: %4.1f lux, Temperature: %4.1f°C," % 
-              (lux, bmp280_temperature))
-        
-        # Create the JSON data structure with three fields
-        MQTT_DATA = "field1=" + str(lux) + "&field2=" + str(bmp280_temperature) + "&status=MQTTPUBLISH"
-        print(MQTT_DATA)
-        
-        # Publish data to ThingSpeak
-        client.publish(topic=MQTT_TOPIC, payload=MQTT_DATA, qos=0, retain=False, properties=None)
-        
-        # Wait for the next sample interval
-        time.sleep(interval)
-        
-    except OSError as e:
-        print(f"Error: {e}")
-        client.reconnect()
-        time.sleep(5)  # Wait a bit before trying again
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        time.sleep(5)  # Wait a bit before trying again
+#Multithread setup
+
+#Create two new threads
+t1 = threading.Thread(target= sensor_thread) # Read sensors
+t2 = threading.Thread(target= button_thread) # Read button inputs
+
+#Start the thread
+t1.start()
+t2.start()
+
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    print("Stopping threads...")
+    exit_event.set()  # Signal threads to stop
+    t1.join()
+    t2.join()
+    print("Threads stopped. Exiting.")
+    exit()
