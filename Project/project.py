@@ -138,8 +138,8 @@ TEMP_LESS_PIN = 11
 TEMP_MORE_PIN = 12
 LED_PIN = 14
 FAN_PIN = 3
-goal_temp = 26
-goal_lux = 200
+goal_temp = 23
+goal_lux = 160
 PWM_LED = 0
 exit_event = threading.Event()
 
@@ -209,9 +209,6 @@ mqtt_publish.start()
 
 try:
     while True:
-        print("---------------------------------------------------------------")
-        print(f"Goal Temp: {goal_temp}, Goal Lux: {goal_lux}")
-        print("---------------------------------------------------------------")
         time.sleep(interval)
 except KeyboardInterrupt:
     print("Stopping threads...")
