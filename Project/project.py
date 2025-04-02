@@ -26,61 +26,96 @@ def on_disconnect(client, userdata, flags, rc=0):
 def on_message(client, userdata, msg):
     print("Received a message on topic: " + msg.topic + "; message: " + msg.payload)
 
-def adjust_led_brightness(lux):
-    """Adjust LED brightness using Soft PWM based on measured lux."""
-    global PWM_LED  # Ensure global access
-
-    if lux < goal_lux and PWM_LED < 100:
-        PWM_LED = min(100, PWM_LED + 5)  # Increase brightness
-        print(f"Too dim: increasing brightness to {PWM_LED}%, Current Lux: {lux:.1f}")
-    elif lux > goal_lux and PWM_LED > 0:
-        PWM_LED = max(0, PWM_LED - 5)  # Decrease brightness
-        print(f"Too bright: decreasing brightness to {PWM_LED}%, Current Lux: {lux:.1f}")
-    else:
-        print(f"LED at stable brightness: {PWM_LED}%, Current Lux: {lux:.1f}")
-
-    wiringpi.softPwmWrite(LED_PIN, PWM_LED)  # Apply PWM setting
-    time.sleep(1)  # Allow time for the effect
+# Light sensor and control thread
+def light_thread():
+    global MQTT_DATA_lux, PWM_LED  # Properly declare PWM_LED as global
     
+    while not exit_event.is_set():
+        try:
+            # Measure BH1750 data
+            lux = get_lux_value(bus, bh1750_address)
+            
+            # Store for MQTT
+            MQTT_DATA_lux = lux
+            
+            # Print measurement
+            print(f"Light: {lux:.1f} lux")
+            
+            # Adjust LED brightness based on measured lux
+            if lux < goal_lux and PWM_LED < 100:
+                PWM_LED = min(100, PWM_LED + 5)  # Increase brightness
+                print(f"Too dim: increasing brightness to {PWM_LED}%, Current Lux: {lux:.1f}")
+            elif lux > goal_lux and PWM_LED > 0:
+                PWM_LED = max(0, PWM_LED - 5)  # Decrease brightness
+                print(f"Too bright: decreasing brightness to {PWM_LED}%, Current Lux: {lux:.1f}")
+            else:
+                print(f"LED at stable brightness: {PWM_LED}%, Current Lux: {lux:.1f}")
 
-# Sensor function
-def sensor_thread():
+            wiringpi.softPwmWrite(LED_PIN, PWM_LED)  # Apply PWM setting
+            
+            # Wait for next check
+            time.sleep(interval)
+            
+        except Exception as e:
+            print(f"Light thread error: {e}")
+            time.sleep(5)  # Wait before retrying
+
+# Temperature sensor and control thread
+def temperature_thread():
+    global MQTT_DATA_temp
+    
     while not exit_event.is_set():
         try:
             # Measure BMP280 data
-            bmp280_temperature = bmp280.get_temperature()
-        
-            # Measure BH1750 data
-            lux = get_lux_value(bus, bh1750_address)
-        
-            # Print measurements
-            print("Light: %4.1f lux, Temperature: %4.1f°C," % 
-            (lux, bmp280_temperature))
-        
-            # Create the JSON data structure
-            MQTT_DATA = f"field1={lux}&field2={bmp280_temperature}&status=MQTTPUBLISH"
+            temperature = bmp280.get_temperature()
+            
+            # Store for MQTT
+            MQTT_DATA_temp = temperature
+            
+            # Print measurement
+            print(f"Temperature: {temperature:.1f}°C")
+            
+            # Adjust fan based on temperature
+            if temperature > goal_temp:
+                wiringpi.digitalWrite(FAN_PIN, 1)  # Turn on fan
+                print(f"Too hot: fan ON, Current Temp: {temperature:.1f}°C")
+            else:
+                wiringpi.digitalWrite(FAN_PIN, 0)  # Turn off fan
+                print(f"Temperature OK: fan OFF, Current Temp: {temperature:.1f}°C")
+                
+            # Wait for next check
+            time.sleep(interval)
+            
+        except Exception as e:
+            print(f"Temperature thread error: {e}")
+            time.sleep(5)  # Wait before retrying
+
+# MQTT publishing thread
+def mqtt_thread():
+    while not exit_event.is_set():
+        try:
+            # Create the JSON data structure using global variables
+            MQTT_DATA = f"field1={MQTT_DATA_lux}&field2={MQTT_DATA_temp}&status=MQTTPUBLISH"
             print(MQTT_DATA)
-        
+            
             # Publish data to ThingSpeak
             client.publish(topic=MQTT_TOPIC, payload=MQTT_DATA, qos=0, retain=False, properties=None)
-
-            # Adjust LED brightness
-            adjust_led_brightness(lux)
-
-            # Wait for the next sample interval
+            
+            # Wait before next publish
             time.sleep(interval)
-        
+            
         except OSError as e:
-            print(f"Error: {e}")
+            print(f"MQTT Error: {e}")
             client.reconnect()
-            time.sleep(5)  # Wait a bit before trying again
+            time.sleep(5)
         except Exception as e:
-            print(f"Unexpected error: {e}")
-            time.sleep(5)  # Wait a bit before trying again
+            print(f"Unexpected MQTT error: {e}")
+            time.sleep(5)
 
+# Button input thread
 def button_thread():
     global goal_lux, goal_temp
-
+    
     while not exit_event.is_set():
         if wiringpi.digitalRead(LIGHT_LESS_PIN) == 1:
             goal_lux = max(0, goal_lux - 1)
@@ -103,10 +138,15 @@ LIGHT_MORE_PIN = 8
 TEMP_LESS_PIN = 11
 TEMP_MORE_PIN = 12
 LED_PIN = 14
+FAN_PIN = 3
 goal_temp = 26
-goal_lux = 50
+goal_lux = 200
 PWM_LED = 0
 exit_event = threading.Event()
+
+# Variables for MQTT data
+MQTT_DATA_lux = 0
+MQTT_DATA_temp = 0
 
 # PIN setup
 wiringpi.wiringPiSetup()
@@ -115,6 +155,7 @@ wiringpi.pinMode(LIGHT_MORE_PIN, 0)
 wiringpi.pinMode(TEMP_LESS_PIN, 0)
 wiringpi.pinMode(TEMP_MORE_PIN, 0)
 wiringpi.pinMode(LED_PIN, 1)
+wiringpi.pinMode(FAN_PIN, 1)
 
 # Enable Soft PWM on LED_PIN
 wiringpi.softPwmCreate(LED_PIN, 0, 100)  # PWM range 0-100
@@ -131,7 +172,7 @@ bmp280 = BMP280(i2c_addr=bmp280_address, i2c_dev=bus)
 bus.write_byte(bh1750_address, 0x10)  # 1lx resolution 120ms
 
 # Sample interval
-interval = 5  # Sample period in seconds
+interval = 10  # Sample period in seconds
 
 # MQTT settings
 MQTT_HOST = "mqtt3.thingspeak.com"
@@ -155,21 +196,31 @@ print(f"Attempting to connect to {MQTT_HOST}")
 client.connect(MQTT_HOST, MQTT_PORT)
 client.loop_start()  # Start the loop
 
-# Multithread setup
-t1 = threading.Thread(target=sensor_thread)  # Read sensors
-t2 = threading.Thread(target=button_thread)  # Read button inputs
+# Multithread setup with separate threads for each function
+light_control = threading.Thread(target=light_thread)
+temp_control = threading.Thread(target=temperature_thread)
+button_input = threading.Thread(target=button_thread)
+mqtt_publish = threading.Thread(target=mqtt_thread)
 
-# Start the threads
-t1.start()
-t2.start()
+# Start all threads
+light_control.start()
+temp_control.start()
+button_input.start()
+mqtt_publish.start()
 
 try:
     while True:
+        print("---------------------------------------------------------------")
         print(f"Goal Temp: {goal_temp}, Goal Lux: {goal_lux}")
-        time.sleep(10)
+        print("---------------------------------------------------------------")
+        time.sleep(interval)
 except KeyboardInterrupt:
     print("Stopping threads...")
     exit_event.set()  # Signal threads to stop
-    t1.join()
-    t2.join()
+    light_control.join()
+    temp_control.join()
+    button_input.join()
+    mqtt_publish.join()
     print("Threads stopped. Exiting.")
+    wiringpi.digitalWrite(FAN_PIN, 0)
+    wiringpi.digitalWrite(LED_PIN, 0)
