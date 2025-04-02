@@ -28,16 +28,20 @@ def on_message(client, userdata, msg):
 
 def adjust_led_brightness(lux):
     """Adjust LED brightness using Soft PWM based on measured lux."""
-    global goal_lux
-    
-    if lux < goal_lux:
-        brightness = min(100, (goal_lux - lux) * 2)  # Increase brightness
-    else:
-        brightness = max(0, 100 - (lux - goal_lux) * 2)  # Decrease brightness
+    global PWM_LED  # Ensure global access
 
-    brightness = max(0, min(100, brightness))  # Keep brightness within 0-100
-    wiringpi.softPwmWrite(LED_PIN, brightness)
-    print(f"Lux: {lux}, Goal: {goal_lux}, LED Brightness: {brightness}%")
+    if lux < goal_lux and PWM_LED < 100:
+        PWM_LED = min(100, PWM_LED + 5)  # Increase brightness
+        print(f"Too dim: increasing brightness to {PWM_LED}%, Current Lux: {lux:.1f}")
+    elif lux > goal_lux and PWM_LED > 0:
+        PWM_LED = max(0, PWM_LED - 5)  # Decrease brightness
+        print(f"Too bright: decreasing brightness to {PWM_LED}%, Current Lux: {lux:.1f}")
+    else:
+        print(f"LED at stable brightness: {PWM_LED}%, Current Lux: {lux:.1f}")
+
+    wiringpi.softPwmWrite(LED_PIN, PWM_LED)  # Apply PWM setting
+    time.sleep(1)  # Allow time for the effect
+    
 
 # Sensor function
 def sensor_thread():
@@ -79,16 +83,16 @@ def button_thread():
 
     while not exit_event.is_set():
         if wiringpi.digitalRead(LIGHT_LESS_PIN) == 1:
-            goal_lux = max(0, goal_lux - 10)
+            goal_lux = max(0, goal_lux - 1)
             print(f"Goal Lux decreased: {goal_lux}")
         if wiringpi.digitalRead(LIGHT_MORE_PIN) == 1:
-            goal_lux += 10
+            goal_lux += 1
             print(f"Goal Lux increased: {goal_lux}")
         if wiringpi.digitalRead(TEMP_LESS_PIN) == 1:
-            goal_temp = max(0, goal_temp - 2)
+            goal_temp = max(0, goal_temp - 1)
             print(f"Goal Temp decreased: {goal_temp}")
         if wiringpi.digitalRead(TEMP_MORE_PIN) == 1:
-            goal_temp += 2
+            goal_temp += 1
             print(f"Goal Temp increased: {goal_temp}")
         
         time.sleep(0.2)  # Prevent bouncing issues
@@ -100,7 +104,8 @@ TEMP_LESS_PIN = 11
 TEMP_MORE_PIN = 12
 LED_PIN = 14
 goal_temp = 26
-goal_lux = 260
+goal_lux = 50
+PWM_LED = 0
 exit_event = threading.Event()
 
 # PIN setup
@@ -126,7 +131,7 @@ bmp280 = BMP280(i2c_addr=bmp280_address, i2c_dev=bus)
 bus.write_byte(bh1750_address, 0x10)  # 1lx resolution 120ms
 
 # Sample interval
-interval = 15  # Sample period in seconds
+interval = 5  # Sample period in seconds
 
 # MQTT settings
 MQTT_HOST = "mqtt3.thingspeak.com"
