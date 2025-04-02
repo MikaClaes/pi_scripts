@@ -95,8 +95,7 @@ def mqtt_thread():
     while not exit_event.is_set():
         try:
             # Create the JSON data structure using global variables
-            MQTT_DATA = f"field1={MQTT_DATA_lux}&field2={MQTT_DATA_temp}&status=MQTTPUBLISH"
-            print(MQTT_DATA)
+            MQTT_DATA = f"field1={MQTT_DATA_lux}&field2={MQTT_DATA_temp}&field3={goal_lux}&field4={goal_temp}&status=MQTTPUBLISH"
             
             # Publish data to ThingSpeak
             client.publish(topic=MQTT_TOPIC, payload=MQTT_DATA, qos=0, retain=False, properties=None)
@@ -118,10 +117,10 @@ def button_thread():
     
     while not exit_event.is_set():
         if wiringpi.digitalRead(LIGHT_LESS_PIN) == 1:
-            goal_lux = max(0, goal_lux - 1)
+            goal_lux = max(0, goal_lux - 10)
             print(f"Goal Lux decreased: {goal_lux}")
         if wiringpi.digitalRead(LIGHT_MORE_PIN) == 1:
-            goal_lux += 1
+            goal_lux += 10
             print(f"Goal Lux increased: {goal_lux}")
         if wiringpi.digitalRead(TEMP_LESS_PIN) == 1:
             goal_temp = max(0, goal_temp - 1)
@@ -223,4 +222,4 @@ except KeyboardInterrupt:
     mqtt_publish.join()
     print("Threads stopped. Exiting.")
     wiringpi.digitalWrite(FAN_PIN, 0)
-    wiringpi.digitalWrite(LED_PIN, 0)
+    wiringpi.softPwmWrite(LED_PIN, 0) 
