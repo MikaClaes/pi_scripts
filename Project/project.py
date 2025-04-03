@@ -138,8 +138,8 @@ TEMP_LESS_PIN = 11
 TEMP_MORE_PIN = 12
 LED_PIN = 14
 FAN_PIN = 3
-goal_temp = 23
-goal_lux = 160
+goal_temp = 26
+goal_lux = 300
 PWM_LED = 0
 exit_event = threading.Event()
 
@@ -171,7 +171,7 @@ bmp280 = BMP280(i2c_addr=bmp280_address, i2c_dev=bus)
 bus.write_byte(bh1750_address, 0x10)  # 1lx resolution 120ms
 
 # Sample interval
-interval = 10  # Sample period in seconds
+interval = 5  # Sample period in seconds
 
 # MQTT settings
 MQTT_HOST = "mqtt3.thingspeak.com"
@@ -218,5 +218,5 @@ except KeyboardInterrupt:
     button_input.join()
     mqtt_publish.join()
     print("Threads stopped. Exiting.")
-    wiringpi.digitalWrite(FAN_PIN, 0)
-    wiringpi.softPwmWrite(LED_PIN, 0) 
+    wiringpi.digitalWrite(FAN_PIN, 0) #Switch off fan
+    wiringpi.softPwmWrite(LED_PIN, 0) #Switch off LED
