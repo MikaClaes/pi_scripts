@@ -139,7 +139,7 @@ TEMP_MORE_PIN = 12
 LED_PIN = 14
 FAN_PIN = 3
 goal_temp = 26
-goal_lux = 300
+goal_lux = 10
 PWM_LED = 0
 exit_event = threading.Event()
 
